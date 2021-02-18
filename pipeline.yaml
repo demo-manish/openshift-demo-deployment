@@ -50,6 +50,7 @@ spec:
                     steps {
                         script {
                             sh "oc start-build myapp --from-dir . --follow"
+                            sh "oc tag myapp:latest myapp:${dockerTag}"
                         }
                     }
                     
