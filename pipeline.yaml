@@ -11,52 +11,89 @@ spec:
   strategy:
     jenkinsPipelineStrategy:
       jenkinsfile: |-
-            pipeline {
-              agent {
-                node {
-                  label 'maven' 
-                }
-              }
-              options {
-                timeout(time: 20, unit: 'MINUTES') 
-              }
-              stages {
-                  
-                stage('CheckoutStage') {
-                    steps {
-                        script {
-                            git "https://github.com/demo-manish/demoapp.git"
-                        }
+      pipeline {
+          agent {
+            node {
+              label 'maven' 
+            }
+          }
+          options {
+            timeout(time: 20, unit: 'MINUTES') 
+          }
+          stages {
+              
+            stage('CheckoutStage') {
+                steps {
+                    script {
+                        git "https://github.com/demo-manish/demoapp.git"
                     }
                 }
+            }
 
-                stage('build') {
-                    steps {
-                        script {
-                            sh "mvn install" 
-                        }
+            stage('build') {
+                steps {
+                    script {
+                        sh "mvn install" 
+                    }
+                }
+            }
+            
+            stage('UnitTest') {
+                steps {
+                    script {
+                        sh "mvn test"
+                    }
+                }
+            }
+            
+            stage('SonarQube Analysis') {
+                steps {
+                    script {
+                        sh "mvn sonar:sonar -Dsonar.host.url=http://sonarqube-demoapp-impl.34.230.135.203.nip.io -Dsonar.login=33d05b27af8304cb0a40afb70dde8cf1ace9d17a"
+                    }
+                }
+            }
+            
+            stage ('DockerBuild') {
+                steps {
+                    script {
+                        sh "oc start-build helloapp --from-dir . --follow"
                     }
                 }
                 
-                stage('UnitTest') {
-                    steps {
-                        script {
-                            sh "mvn test"
-                        }
-                    }
-                }
-                
-                stage ('DockerStage') {
-                    steps {
-                        script {
-                            sh "oc start-build myapp --from-dir . --follow"
-                            sh "oc tag myapp:latest myapp:${dockerTag}"
-                        }
-                    }
-                    
-                }
+            }
+            stage ('Dev Deployment') {
+            steps {
+              script {
+                // sh "oc tag helloapp:latest helloapp:${BUILD_NUMBER}"
+                openshiftTag(namespace: 'demoapp-dev', sourceStream: 'helloapp', sourceTag: 'latest', destinationStream: 'helloapp', destinationTag: "${BUILD_NUMBER}")
+                openshiftDeploy(namespace: 'demoapp-dev', deploymentConfig: 'helloapp-dc-dev')
               }
             }
+          }
+          stage ('QA Deployment') {
+            steps {
+              script {
+                // sh "oc tag helloapp:${BUILD_NUMBER} helloapp:promoteQA"
+                openshiftTag(namespace: 'demoapp-dev', sourceStream: 'helloapp', sourceTag: "${BUILD_NUMBER}", destinationStream: 'helloapp', destinationTag: "promoteQA")
+                openshiftDeploy(namespace: 'demoapp-qa', deploymentConfig: 'helloapp-dc-qa')
+              }
+            }
+          }
+
+          stage ('IMPL Deployment') {
+            steps {
+              script {
+              timeout(time: 2, unit: 'DAYS') {
+                input message: 'Approve to IMPL?'
+              }
+              openshiftTag(namespace: 'demoapp-dev', sourceStream: 'helloapp', sourceTag: "promoteQA", destinationStream: 'helloapp', destinationTag: "promoteIMPL")
+              openshiftDeploy (namespace: 'demoapp-impl', deploymentConfig: 'helloapp-dc-impl') 
+              }
+            }
+          }
+          }
+        } 
         
     type: JenkinsPipeline
  
